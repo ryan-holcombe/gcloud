@@ -14,3 +14,11 @@ helm init --service-account tiller --upgrade
 ```
 kubectl create clusterrolebinding kube-system-default-admin --clusterrole=cluster-admin --serviceaccount=default:default
 ```
+
+## Kubernetes secrets
+
+#### Gcloud Account
+requires a `credentials.json` file to be present which represents the IAM account that will be executing terraform resources
+
+#### Docker Registry
+requires a `dockercreds.json` config file

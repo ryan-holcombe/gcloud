@@ -43,16 +43,6 @@ EOF
   ]
 }
 
-resource "kubernetes_secret" "service_account_credentials" {
-  metadata {
-    name = "service-account-credentials"
-  }
-
-  data {
-    "credentials.json" = "${file("${path.module}/credentials.json")}"
-  }
-}
-
 resource "helm_release" "external-dns" {
   name  = "external-dns"
   chart = "stable/external-dns"
