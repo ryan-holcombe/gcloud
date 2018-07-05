@@ -46,3 +46,9 @@ variable dns_root_name {
 variable dns_gke_name {
   default = "gcp-k8s-rholcombe30-com"
 }
+
+variable flux_git_url {
+  default = "ssh://git@github.com/sythe21/flux-gitops"
+}
+
+variable hubot_slack_token {}

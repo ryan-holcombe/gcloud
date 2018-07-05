@@ -2,10 +2,8 @@ resource "helm_release" "jenkins" {
   name  = "jenkins"
   chart = "stable/jenkins"
 
-
   depends_on = [
-    "helm_release.nginx-ingress",
-    "google_container_cluster.default",
+    "helm_release.nginx-ingress"
   ]
 
   values = [<<EOF
@@ -99,6 +97,7 @@ Master:
     - blueocean:1.6.0
     - pipeline-github-lib:1.0
     - pipeline-utility-steps:2.1.0
+    - hubot-steps:2.0.0
   # Used to approve a list of groovy functions in pipelines used the script-security plugin. Can be viewed under /scriptApproval
   # ScriptApproval:
   #   - "method groovy.json.JsonSlurperClassic parseText java.lang.String"
