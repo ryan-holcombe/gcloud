@@ -22,3 +22,8 @@ requires a `credentials.json` file to be present which represents the IAM accoun
 
 #### Docker Registry
 requires a `dockercreds.json` config file
+
+#### Cert Manager ClusterIssuer
+```
+kubectl create -f letsencrypt-clusterissuer-prod.yml
+```

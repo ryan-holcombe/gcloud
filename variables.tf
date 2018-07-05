@@ -52,3 +52,9 @@ variable flux_git_url {
 }
 
 variable hubot_slack_token {}
+
+variable jenkins_user {
+  default = "admin"
+}
+
+variable jenkins_api_token {}

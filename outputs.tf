@@ -21,7 +21,7 @@ output cluster_zone {
 }
 
 output "jenkins_user" {
-  value = "admin"
+  value = "${var.jenkins_user}"
 }
 
 output "jenkins_password" {

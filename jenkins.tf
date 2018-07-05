@@ -25,7 +25,7 @@ Master:
 # ImagePullSecret: jenkins
   Component: "jenkins-master"
   UseSecurity: true
-  AdminUser: admin
+  AdminUser: ${var.jenkins_user}
   AdminPassword: ${random_id.jenkins_password.b64_std}
   Cpu: "100m"
   Memory: "256Mi"
@@ -127,12 +127,12 @@ Master:
     ApiVersion: extensions/v1beta1
     Annotations:
       kubernetes.io/ingress.class: nginx
-    #  kubernetes.io/tls-acme: "true"
+      certmanager.k8s.io/cluster-issuer: letsencrypt-prod
 
     TLS:
-    # - secretName: jenkins.cluster.local
-    #   hosts:
-    #     - jenkins.cluster.local
+    - secretName: jenkins-tls
+      hosts:
+      - jenkins.gke.rholcombe30.com
 
 Agent:
   Enabled: true

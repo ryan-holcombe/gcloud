@@ -72,9 +72,14 @@ resource "helm_release" "dashboard" {
   values = [<<EOF
 ingress:
   annotations:
+    kubernetes.io/ingress.class: "nginx"
+    ingress.kubernetes.io/ssl-redirect: "false"
+    certmanager.k8s.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/secure-backends: "true"
-    kubernetes.io/ingress.class: nginx
-    kubernetes.io/tls-acme: 'true'
+  tls:
+  - hosts:
+    - dashboard.${var.dns_gke_host}
+    secretName: dashboard-tls
   enabled: true
   hosts:
     - dashboard.${var.dns_gke_host}
@@ -99,6 +104,21 @@ rbac:
   create: true
 ssh:
   known_hosts: "github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ=="
+EOF
+  ]
+}
+
+resource "helm_release" "cert_manager" {
+  name  = "cert-manager"
+  chart = "stable/cert-manager"
+  namespace = "default"
+
+  values = [<<EOF
+ingressShim:
+  defaultIssuerName: letsencrypt-prod
+  defaultIssuerKind: ClusterIssuer
+rbac:
+  create: true
 EOF
   ]
 }

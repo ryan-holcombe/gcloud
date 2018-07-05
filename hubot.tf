@@ -11,21 +11,21 @@ resource "helm_release" "hubot" {
 ingress:
   enabled: true
   annotations:
-    kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
+    kubernetes.io/ingress.class: "nginx"
+    certmanager.k8s.io/cluster-issuer: letsencrypt-prod
   path: /
   hosts:
     - hubot.gke.rholcombe30.com
-  tls: []
-  #  - secretName: hubot-tls
-  #    hosts:
-  #      - hubot.local
+  tls:
+  - secretName: hubot-tls
+    hosts:
+      - hubot.gke.rholcombe30.com
 
 hubot:
 
   config:
-    HUBOT_JENKINS_URL: http://jenkins:8080
-    HUBOT_JENKINS_AUTH: admin:${random_id.jenkins_password.b64_std}
+    HUBOT_JENKINS_URL: http://jenkins.default.svc.cluster.local:8080/
+    HUBOT_JENKINS_AUTH: admin:${var.jenkins_api_token}
 
   slackToken: "${var.hubot_slack_token}"
 
@@ -55,7 +55,7 @@ hubot:
       #   hubot jenkins build <jobPath> - builds the specified Jenkins job
       #   hubot jenkins build <jobPath>, <params> - builds the specified Jenkins job with parameters as key=value&key2=value2
       #   hubot jenkins desc <jobPath> - Describes the specified Jenkins job
-      #   hubot jenkins last <jobPath> - Details about the last build for the specified Jenkins job
+      #   hubot jenkins last <job> - Details about the last build for the specified Jenkins job
       #   hubot jenkins list <filter> - lists Jenkins jobs
       #   hubot jenkins proceed <jobPath> - proceeds with the given job that is paused, waiting on user input
       #
@@ -66,7 +66,29 @@ hubot:
 
       jobList = []
 
+      jenkinsCrumb = (msg, callback) ->
+        url = process.env.HUBOT_JENKINS_URL
+        path = "#{url}/crumbIssuer/api/json"
+        req = msg.http(path)
+
+        if process.env.HUBOT_JENKINS_AUTH
+          auth = new Buffer(process.env.HUBOT_JENKINS_AUTH).toString('base64')
+          req.headers Authorization: "Basic #{auth}"
+
+        req.header('Content-Length', 0)
+        req.get() (err, res, body) ->
+          if err
+            msg.send "```Jenkins says: #{err}```"
+          else
+            try
+              content = JSON.parse(body)
+              callback(content.crumb)
+            catch error
+              msg.send error
+
+
       jenkinsBuild = (msg, buildWithEmptyParameters) ->
+        jenkinsCrumb(msg, (crumb) ->
           url = process.env.HUBOT_JENKINS_URL
           jobPath = querystring.escape msg.match[1]
           jobPath = jobPath.split("%2F").join("/")
@@ -81,19 +103,22 @@ hubot:
             req.headers Authorization: "Basic #{auth}"
 
           req.header('Content-Length', 0)
+          req.header('Jenkins-Crumb', crumb)
           req.post() (err, res, body) ->
-              if err
-                msg.reply "```Jenkins says: #{err}```"
-              else if 200 <= res.statusCode < 400 # Or, not an error code.
-                msg.reply "```(#{res.statusCode}) Build started for #{url}#{jobPath} ```"
-              else if 400 == res.statusCode
-                jenkinsBuild(msg, true)
-              else if 404 == res.statusCode
-                msg.reply "```Build not found, double check that it exists and is spelt correctly.```"
-              else
-                msg.reply "```Jenkins says: Status #{res.statusCode} #{body}```"
+            if err
+              msg.reply "```Jenkins says: #{err}```"
+            else if 200 <= res.statusCode < 400 # Or, not an error code.
+              msg.reply "```(#{res.statusCode}) Build started for #{url}#{jobPath} ```"
+            else if 400 == res.statusCode
+              jenkinsBuild(msg, true)
+            else if 404 == res.statusCode
+              msg.reply "```Build not found, double check that it exists and is spelt correctly.```"
+            else
+              msg.reply "```Jenkins says: Status #{res.statusCode} #{body}```"
+        )
 
       jenkinsProceed = (msg, buildWithEmptyParameters) ->
+        jenkinsCrumb(msg, (crumb) ->
           url = process.env.HUBOT_JENKINS_URL
           jobPath = querystring.escape msg.match[1]
           jobPath = jobPath.split("%2F").join("/")
@@ -108,19 +133,22 @@ hubot:
             req.headers Authorization: "Basic #{auth}"
 
           req.header('Content-Length', 0)
+          req.header('Jenkins-Crumb', crumb)
           req.post() (err, res, body) ->
-              if err
-                msg.reply "```Jenkins says: #{err}```"
-              else if 200 <= res.statusCode < 400 # Or, not an error code.
-                msg.reply "```(#{res.statusCode}) Proceeding with #{url}#{jobPath} ```"
-              else if 400 == res.statusCode
-                jenkinsBuild(msg, true)
-              else if 404 == res.statusCode
-                msg.reply "```Build not found, double check that it exists and is spelt correctly.```"
-              else
-                msg.reply "```Jenkins says: Status #{res.statusCode} #{body}```"
+            if err
+              msg.reply "```Jenkins says: #{err}```"
+            else if 200 <= res.statusCode < 400 # Or, not an error code.
+              msg.reply "```(#{res.statusCode}) Proceeding with #{url}#{jobPath} ```"
+            else if 400 == res.statusCode
+              jenkinsBuild(msg, true)
+            else if 404 == res.statusCode
+              msg.reply "```Build not found, double check that it exists and is spelt correctly.```"
+            else
+              msg.reply "```Jenkins says: Status #{res.statusCode} #{body}```"
+        )
 
       jenkinsAbort = (msg, buildWithEmptyParameters) ->
+        jenkinsCrumb(msg, (crumb) ->
           url = process.env.HUBOT_JENKINS_URL
           jobPath = querystring.escape msg.match[1]
           jobPath = jobPath.split("%2F").join("/")
@@ -135,178 +163,179 @@ hubot:
             req.headers Authorization: "Basic #{auth}"
 
           req.header('Content-Length', 0)
+          req.header('Jenkins-Crumb', crumb)
           req.post() (err, res, body) ->
-              if err
-                msg.reply "```Jenkins says: #{err}```"
-              else if 200 <= res.statusCode < 400 # Or, not an error code.
-                msg.reply "```(#{res.statusCode}) Aborting #{url}#{jobPath} ```"
-              else if 400 == res.statusCode
-                jenkinsBuild(msg, true)
-              else if 404 == res.statusCode
-                msg.reply "```Build not found, double check that it exists and is spelt correctly.```"
-              else
-                msg.reply "```Jenkins says: Status #{res.statusCode} #{body}```"
+            if err
+              msg.reply "```Jenkins says: #{err}```"
+            else if 200 <= res.statusCode < 400 # Or, not an error code.
+              msg.reply "```(#{res.statusCode}) Aborting #{url}#{jobPath} ```"
+            else if 400 == res.statusCode
+              jenkinsBuild(msg, true)
+            else if 404 == res.statusCode
+              msg.reply "```Build not found, double check that it exists and is spelt correctly.```"
+            else
+              msg.reply "```Jenkins says: Status #{res.statusCode} #{body}```"
+        )
 
       jenkinsDescribe = (msg) ->
-          url = process.env.HUBOT_JENKINS_URL
-          jobPath = querystring.escape msg.match[1]
-          jobPath = jobPath.split("%2F").join("/")
-          path = "#{url}#{jobPath}api/json"
+        url = process.env.HUBOT_JENKINS_URL
+        jobPath = querystring.escape msg.match[1]
+        jobPath = jobPath.split("%2F").join("/")
+        path = "#{url}#{jobPath}api/json"
 
-          req = msg.http(path)
+        req = msg.http(path)
 
-          if process.env.HUBOT_JENKINS_AUTH
-            auth = new Buffer(process.env.HUBOT_JENKINS_AUTH).toString('base64')
-            req.headers Authorization: "Basic #{auth}"
+        if process.env.HUBOT_JENKINS_AUTH
+          auth = new Buffer(process.env.HUBOT_JENKINS_AUTH).toString('base64')
+          req.headers Authorization: "Basic #{auth}"
 
-          req.header('Content-Length', 0)
-          req.get() (err, res, body) ->
-              if err
-                msg.send "```Jenkins says: #{err}```"
-              else
-                response = ""
-                try
-                  content = JSON.parse(body)
-                  response += "JOB: #{content.displayName}\n"
-                  response += "URL: #{content.url}\n"
-
-                  if content.description
-                    response += "DESCRIPTION: #{content.description}\n"
-
-                  response += "ENABLED: #{content.buildable}\n"
-                  response += "STATUS: #{content.color}\n"
-
-                  tmpReport = ""
-                  if content.healthReport.length > 0
-                    for report in content.healthReport
-                      tmpReport += "\n  #{report.description}"
-                  else
-                    tmpReport = " unknown"
-                  response += "HEALTH: #{tmpReport}\n"
-
-                  parameters = ""
-                  for item in content.actions
-                    if item.parameterDefinitions
-                      for param in item.parameterDefinitions
-                        tmpDescription = if param.description then " - #{param.description} " else ""
-                        tmpDefault = if param.defaultParameterValue then " (default=#{param.defaultParameterValue.value})" else ""
-                        parameters += "\n  #{param.name}#{tmpDescription}#{tmpDefault}"
-
-                  if parameters != ""
-                    response += "PARAMETERS: #{parameters}\n"
-
-                  msg.send "```"+response+"```"
-
-                  if not content.lastBuild
-                    return
-
-                  path = "#{url}#{jobPath}#{content.lastBuild.number}/api/json"
-                  req = msg.http(path)
-                  if process.env.HUBOT_JENKINS_AUTH
-                    auth = new Buffer(process.env.HUBOT_JENKINS_AUTH).toString('base64')
-                    req.headers Authorization: "Basic #{auth}"
-
-                  req.header('Content-Length', 0)
-                  req.get() (err, res, body) ->
-                      if err
-                        msg.send "Jenkins says: #{err}"
-                      else
-                        response = ""
-                        try
-                          content = JSON.parse(body)
-                          console.log(JSON.stringify(content, null, 4))
-                          jobstatus = content.result || 'PENDING'
-                          jobdate = new Date(content.timestamp);
-                          response += "LAST JOB: #{jobstatus}, #{jobdate}\n"
-
-                          msg.send response
-                        catch error
-                          msg.send error
-
-                catch error
-                  msg.send error
-
-      jenkinsLast = (msg) ->
-          url = process.env.HUBOT_JENKINS_URL
-          jobPath = querystring.escape msg.match[1]
-          jobPath = jobPath.split("%2F").join("/")
-
-          path = "#{url}#{jobPath}lastBuild/api/json"
-
-          req = msg.http(path)
-
-          if process.env.HUBOT_JENKINS_AUTH
-            auth = new Buffer(process.env.HUBOT_JENKINS_AUTH).toString('base64')
-            req.headers Authorization: "Basic #{auth}"
-
-          req.header('Content-Length', 0)
-          req.get() (err, res, body) ->
-              if err
-                msg.send "Jenkins says: #{err}"
-              else
-                response = ""
-                try
-                  content = JSON.parse(body)
-                  response += "NAME: #{content.fullDisplayName}\n"
-                  response += "URL: #{content.url}\n"
-
-                  if content.description
-                    response += "DESCRIPTION: #{content.description}\n"
-
-                  response += "BUILDING: #{content.building}\n"
-
-                  msg.send response
-
-      # TODO enhance this to support iterate through folders and don't allow empty input as it can cause big mess
-      # when number of jobs are too many (which is the real case).
-      jenkinsList = (msg) ->
-          url = process.env.HUBOT_JENKINS_URL
-          filter = new RegExp(msg.match[2], 'i')
-          req = msg.http("#{url}/api/json")
-
-          if !msg.match[2]
-              msg.reply "```Try with at least 3 charaters.```"
+        req.header('Content-Length', 0)
+        req.get() (err, res, body) ->
+          if err
+            msg.send "```Jenkins says: #{err}```"
           else
-            if msg.match[2].length < 3
-              msg.reply "```Try with at least 3 charaters.```"
-            else
+            response = ""
+            try
+              content = JSON.parse(body)
+              response += "JOB: #{content.displayName}\n"
+              response += "URL: #{content.url}\n"
+
+              if content.description
+                response += "DESCRIPTION: #{content.description}\n"
+
+              response += "ENABLED: #{content.buildable}\n"
+              response += "STATUS: #{content.color}\n"
+
+              tmpReport = ""
+              if content.healthReport.length > 0
+                for report in content.healthReport
+                  tmpReport += "\n  #{report.description}"
+              else
+                tmpReport = " unknown"
+              response += "HEALTH: #{tmpReport}\n"
+
+              parameters = ""
+              for item in content.actions
+                if item.parameterDefinitions
+                  for param in item.parameterDefinitions
+                    tmpDescription = if param.description then " - #{param.description} " else ""
+                    tmpDefault = if param.defaultParameterValue then " (default=#{param.defaultParameterValue.value})" else ""
+                    parameters += "\n  #{param.name}#{tmpDescription}#{tmpDefault}"
+
+              if parameters != ""
+                response += "PARAMETERS: #{parameters}\n"
+
+              msg.send "```"+response+"```"
+
+              if not content.lastBuild
+                return
+
+              path = "#{url}#{jobPath}#{content.lastBuild.number}/api/json"
+              req = msg.http(path)
               if process.env.HUBOT_JENKINS_AUTH
                 auth = new Buffer(process.env.HUBOT_JENKINS_AUTH).toString('base64')
                 req.headers Authorization: "Basic #{auth}"
 
+              req.header('Content-Length', 0)
               req.get() (err, res, body) ->
-                response = ""
                 if err
                   msg.send "Jenkins says: #{err}"
                 else
+                  response = ""
                   try
                     content = JSON.parse(body)
-                    for job in content.jobs
-                      # org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject" need to add this too
-                      if job._class != "com.cloudbees.hudson.plugins.folder.Folder"
-                        index = jobList.indexOf(job.name)
-                        if index == -1
-                          jobList.push(job.name)
-                          index = jobList.indexOf(job.name)
-                        state = if job.color == "red"
-                                  "FAIL"
-                                else if job.color == "aborted"
-                                  "ABORTED"
-                                else if job.color == "aborted_anime"
-                                  "CURRENTLY RUNNING"
-                                else if job.color == "red_anime"
-                                  "CURRENTLY RUNNING"
-                                else if job.color == "blue_anime"
-                                  "CURRENTLY RUNNING"
-                                else "PASS"
-                        if (filter.test job.name) or (filter.test state)
-                          response += "*#{state}* #{job.name} #{job.url}\n"
-                      else
-                        if (filter.test job.name) or (filter.test state)
-                          response += "FOLDER #{job.name} #{job.url}\n"
+                    console.log(JSON.stringify(content, null, 4))
+                    jobstatus = content.result || 'PENDING'
+                    jobdate = new Date(content.timestamp)
+                    response += "LAST JOB: #{jobstatus}, #{jobdate}\n"
+
                     msg.send response
                   catch error
                     msg.send error
+
+            catch error
+              msg.send error
+
+      jenkinsLast = (msg) ->
+        url = process.env.HUBOT_JENKINS_URL
+        job = msg.match[1]
+
+        path = "#{url}job/#{job}/lastBuild/api/json"
+
+        req = msg.http(path)
+
+        if process.env.HUBOT_JENKINS_AUTH
+          auth = new Buffer(process.env.HUBOT_JENKINS_AUTH).toString('base64')
+          req.headers Authorization: "Basic #{auth}"
+
+        req.header('Content-Length', 0)
+        req.get() (err, res, body) ->
+          if err
+            msg.send "Jenkins says: #{err}"
+          else
+            response = ""
+            try
+              content = JSON.parse(body)
+              response += "NAME: #{content.fullDisplayName}\n"
+              response += "URL: #{content.url}\n"
+
+              if content.description
+                response += "DESCRIPTION: #{content.description}\n"
+
+              response += "BUILDING: #{content.building}\n"
+
+              msg.send response
+
+      # TODO enhance this to support iterate through folders and don't allow empty input as it can cause big mess
+      # when number of jobs are too many (which is the real case).
+      jenkinsList = (msg) ->
+        url = process.env.HUBOT_JENKINS_URL
+        filter = new RegExp(msg.match[2], 'i')
+        req = msg.http("#{url}/api/json")
+
+        if !msg.match[2]
+          msg.reply "```Try with at least 3 charaters.```"
+        else
+          if msg.match[2].length < 3
+            msg.reply "```Try with at least 3 charaters.```"
+          else
+            if process.env.HUBOT_JENKINS_AUTH
+              auth = new Buffer(process.env.HUBOT_JENKINS_AUTH).toString('base64')
+              req.headers Authorization: "Basic #{auth}"
+
+            req.get() (err, res, body) ->
+              response = ""
+              if err
+                msg.send "Jenkins says: #{err}"
+              else
+                try
+                  content = JSON.parse(body)
+                  for job in content.jobs
+      # org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject" need to add this too
+                    if job._class != "com.cloudbees.hudson.plugins.folder.Folder"
+                      index = jobList.indexOf(job.name)
+                      if index == -1
+                        jobList.push(job.name)
+                        index = jobList.indexOf(job.name)
+                      state = if job.color == "red"
+                        "FAIL"
+                      else if job.color == "aborted"
+                        "ABORTED"
+                      else if job.color == "aborted_anime"
+                        "CURRENTLY RUNNING"
+                      else if job.color == "red_anime"
+                        "CURRENTLY RUNNING"
+                      else if job.color == "blue_anime"
+                        "CURRENTLY RUNNING"
+                      else "PASS"
+                      if (filter.test job.name) or (filter.test state)
+                        response += "*#{state}* #{job.name} #{job.url}\n"
+                    else
+                      if (filter.test job.name) or (filter.test state)
+                        response += "FOLDER #{job.name} #{job.url}\n"
+                  msg.send response
+                catch error
+                  msg.send error
 
       module.exports = (robot) ->
         robot.respond /j(?:enkins)? build (.*)?/i, (msg) ->
@@ -333,6 +362,7 @@ hubot:
           desc: jenkinsDescribe
           last: jenkinsLast
         }
+
 
     hubot_slack.js: |
       module.exports = function(robot) {
@@ -430,7 +460,7 @@ hubot:
               attachments = [
                 {
                   "color": color,
-                  "text": message + "\n     *to Proceed reply:* `.j proceed " + jobUrl + "`" + "\n     *to Abort reply:* `.j abort " + jobUrl + "`",
+                  "text": message + "\n     *to Proceed reply:* `" + robot.name + " j proceed " + jobUrl + "`" + "\n     *to Abort reply:* `" + robot.name + " j abort " + jobUrl + "`",
                   "title": title,
                   "title_link": envVars.RUN_DISPLAY_URL,
                   "footer": buildCause,
