@@ -2,11 +2,6 @@ resource "helm_release" "hubot" {
   name  = "hubot"
   chart = "stable/hubot"
 
-  depends_on = [
-    "helm_release.nginx-ingress",
-    "helm_release.jenkins"
-  ]
-
   values = [<<EOF
 ingress:
   enabled: true

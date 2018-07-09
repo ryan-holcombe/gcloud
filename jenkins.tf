@@ -2,10 +2,6 @@ resource "helm_release" "jenkins" {
   name  = "jenkins"
   chart = "stable/jenkins"
 
-  depends_on = [
-    "helm_release.nginx-ingress"
-  ]
-
   values = [<<EOF
 # Default values for jenkins.
 # This is a YAML-formatted file.
